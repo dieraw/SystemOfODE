@@ -14,10 +14,10 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 public class Lab8Optimized {
-    private static final double c2 = 0.6;
-    private static final double A = 1;
-    private static final double B = 3;
-    private static final double C = 3;
+    private static final double c2 = 0.55;
+    private static final double A = 2;
+    private static final double B = -1;
+    private static final double C = 2;
     private static final double x0 = 0;
     private static final double x1 = 5;
     private static final RealVector y0 = new ArrayRealVector(new double[]{1, 1, A, 1});
@@ -271,6 +271,8 @@ public class Lab8Optimized {
 
         return new AdaptiveResult(calcCount);
     }
+
+
     private static double fullErrorrate(String methodName,double x, RealVector y, double h){
         double tol = 1e-5;
         int degree = methodName.equals("Рунге-Кутты") ? 2 : 3;
@@ -278,11 +280,13 @@ public class Lab8Optimized {
         Result rkResult = null;
         Result rkResultHalf = null;
 
+        double hLocal = h;
+
         if (methodName.equals("Рунге-Кутты")) {
 
             while (true) {
-                rkResult = rungeKutta(x, y, x + h, h);
-                rkResultHalf = rungeKutta(x, y, x + h, h/2);
+                rkResult = rungeKutta(x, y, x + hLocal, hLocal);
+                rkResultHalf = rungeKutta(x, y, x + hLocal, hLocal/2);
 
 
                 RealVector error = rkResult.y.subtract(rkResultHalf.y).mapDivide(1 - Math.pow(2, -degree));
@@ -291,14 +295,14 @@ public class Lab8Optimized {
                 if (errorNorm < tol) {
                     break;
                 } else {
-                    h /= 2;
+                    hLocal /= 2;
                 }
             }
         }else {
 
             while (true) {
-                rkResult = simpson(x, y, x+ h, h);
-                rkResultHalf = simpson(x,y,x + h,h/2);
+                rkResult = simpson(x, y, x+ hLocal, hLocal);
+                rkResultHalf = simpson(x,y,x + hLocal,hLocal/2);
 
                 RealVector error = rkResult.y.subtract(rkResultHalf.y).mapDivide(1 - Math.pow(2, -degree));
                 double errorNorm = error.getNorm();
@@ -306,7 +310,7 @@ public class Lab8Optimized {
                 if (errorNorm < tol) {
                     break;
                 } else {
-                    h /= 2;
+                    hLocal /= 2;
                 }
             }
         }
@@ -315,6 +319,7 @@ public class Lab8Optimized {
         RealVector error = rkResult.y.subtract(rkResultHalf.y).mapDivide(1 - Math.pow(2, -degree));
         return error.getNorm();
     }
+
 
     private static void saveChart(XYChart chart, String fileName) {
         try {
@@ -416,10 +421,12 @@ public class Lab8Optimized {
     private static void visualizeOptimalStep() {
         double tol = 1e-5;
         int degreeRk = 2;
-        String cacheKey = "hOptRk";
+        int degreeSimpson = 2;
+        String cacheKeyRk = "hOptRk";
+        String cacheKeySimpson = "hOptSimpson";
         ExecutorService executor = Executors.newFixedThreadPool(NUM_THREADS);
 
-        double hOptRk = optimalStepCache.computeIfAbsent(cacheKey, k -> {
+        double hOptRk = optimalStepCache.computeIfAbsent(cacheKeyRk, k -> {
             double h = 1.0;
             Result rkResult = null;
             Result rkResultHalf = null;
@@ -439,8 +446,30 @@ public class Lab8Optimized {
             }
         });
 
+        double hOptSimpson = optimalStepCache.computeIfAbsent(cacheKeySimpson, k -> {
+            double h = 1.0;
+            Result simpsonResult = null;
+            Result simpsonResultHalf = null;
+            while (true) {
+                simpsonResult = simpson(x0, y0, x1, h);
+                simpsonResultHalf = simpson(x0, y0, x1, h / 2);
+
+                RealVector error = simpsonResult.y.subtract(simpsonResultHalf.y).mapDivide(1 - Math.pow(2, -degreeSimpson));
+                double errorNorm = error.getNorm();
+
+                if (errorNorm < tol) {
+                    System.out.println("Оптимальный шаг (Симпсона): " + h);
+                    return h;
+                } else {
+                    h /= 2;
+                }
+            }
+        });
+
         List<Double> nodesRk = new ArrayList<>();
         List<Double> normsRk = new ArrayList<>();
+        List<Double> nodesSimpson = new ArrayList<>();
+        List<Double> normsSimpson = new ArrayList<>();
 
         List<CompletableFuture<Void>> futures = new ArrayList<>();
         for (double i = x0; i <= x1; i += hOptRk) {
@@ -451,6 +480,17 @@ public class Lab8Optimized {
                 synchronized (nodesRk) {
                     nodesRk.add(x);
                     normsRk.add(rk.y.subtract(real).getNorm());
+                }
+            }, executor));
+        }
+        for (double i = x0; i <= x1; i += hOptSimpson) {
+            double x = i;
+            futures.add(CompletableFuture.runAsync(() -> {
+                RealVector real = realY(x);
+                Result simpson = simpson(x0, y0, x, hOptSimpson);
+                synchronized (nodesSimpson) {
+                    nodesSimpson.add(x);
+                    normsSimpson.add(simpson.y.subtract(real).getNorm());
                 }
             }, executor));
         }
@@ -466,10 +506,6 @@ public class Lab8Optimized {
         }
 
 
-        XYChart chartNorms = QuickChart.getChart("Норма от x (оптимальный шаг)", "x", "Норма",
-                "Рунге-Кутты", nodesRk, normsRk);
-        saveChart(chartNorms, "./optimal_step_chart");
-
         // Построение графика зависимости нормы точной полной погрешности от независимой переменной при решении с hopt
         XYChart chartNormsVsX = new XYChart(800, 600);
         chartNormsVsX.setTitle("Зависимость нормы погрешности от x при hopt");
@@ -477,6 +513,7 @@ public class Lab8Optimized {
         chartNormsVsX.setYAxisTitle("Норма погрешности");
 
         chartNormsVsX.addSeries("Рунге-Кутты", nodesRk, normsRk);
+        chartNormsVsX.addSeries("Симпсона", nodesSimpson, normsSimpson);
         saveChart(chartNormsVsX, "./optimal_step_norm_vs_x_chart");
     }
 }
