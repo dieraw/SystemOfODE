@@ -13,11 +13,12 @@ import java.util.concurrent.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+//Вариант 4
 public class Lab8Optimized {
-    private static final double c2 = 0.55;
+    private static final double c2 = 0.2;
     private static final double A = 2;
     private static final double B = -1;
-    private static final double C = 2;
+    private static final double C = -1;
     private static final double x0 = 0;
     private static final double x1 = 5;
     private static final RealVector y0 = new ArrayRealVector(new double[]{1, 1, A, 1});
@@ -106,6 +107,7 @@ public class Lab8Optimized {
         return new Result(yCurr, calcCount);
     }
 
+
     public static class Result {
         public RealVector y;
         public int calcCount;
@@ -192,6 +194,7 @@ public class Lab8Optimized {
         List<Double> norms = new ArrayList<>();
         List<String> stepTypes = new ArrayList<>();
         List<Double> fullError = new ArrayList<>();
+        List<RealVector> yValues = new ArrayList<>(); // Добавлено для хранения значений y
 
         while (x < x1) {
             Result result = method.apply(x, y, x + h, h);
@@ -210,7 +213,7 @@ public class Lab8Optimized {
             hValues.add(h);
             norms.add(realY(x).subtract(y).getNorm());
             fullError.add(fullErrorrate(methodName, x,y,h));
-
+            yValues.add(y); // Сохраняем значение y
 
             if (norm > rtol * Math.pow(2, 2)) {
                 h /= 2;
@@ -227,68 +230,60 @@ public class Lab8Optimized {
             }
         }
 
-        // График решения
-        XYChart chartSolution = QuickChart.getChart("Решение (" + methodName + "), rtol = " + rtol, "x", "y",
-                "Решение", xValues, norms);
-        saveChart(chartSolution, "./solution_chart_" + methodName + "_" + rtol);
+        if (rtol == 1e-6) {
+            // График решения
+            saveAdaptiveSolutionChart(methodName, rtol, xValues, yValues);
 
-        // График длины шага
-        XYChart chartStep = new XYChart(800, 600);
-        chartStep.setTitle("Длина шага от x (" + methodName + "), rtol = " + rtol);
-        chartStep.setXAxisTitle("x");
-        chartStep.setYAxisTitle("Длина шага");
 
-        // Добавляем данные для графика длины шага
-        List<Double> acceptedX = new ArrayList<>();
-        List<Double> acceptedH = new ArrayList<>();
-        List<Double> rejectedX = new ArrayList<>();
-        List<Double> rejectedH = new ArrayList<>();
+            // График длины шага
+            XYChart chartStep = new XYChart(800, 600);
+            chartStep.setTitle("Длина шага от x (" + methodName + "), rtol = " + rtol);
+            chartStep.setXAxisTitle("x");
+            chartStep.setYAxisTitle("Длина шага");
 
-        for (int i = 0; i < xValues.size(); i++) {
-            if (stepTypes.get(i).equals("Принятие") || stepTypes.get(i).equals("Увеличение")) {
-                acceptedX.add(xValues.get(i));
-                acceptedH.add(hValues.get(i));
-            } else {
-                rejectedX.add(xValues.get(i));
-                rejectedH.add(hValues.get(i));
+            // Добавляем данные для графика длины шага
+            List<Double> acceptedX = new ArrayList<>();
+            List<Double> acceptedH = new ArrayList<>();
+            List<Double> rejectedX = new ArrayList<>();
+            List<Double> rejectedH = new ArrayList<>();
+
+            for (int i = 0; i < xValues.size(); i++) {
+                if (stepTypes.get(i).equals("Принятие") || stepTypes.get(i).equals("Увеличение")) {
+                    acceptedX.add(xValues.get(i));
+                    acceptedH.add(hValues.get(i));
+                } else {
+                    rejectedX.add(xValues.get(i));
+                    rejectedH.add(hValues.get(i));
+                }
             }
+
+            chartStep.addSeries("Принятые шаги", acceptedX, acceptedH);
+            chartStep.addSeries("Отброшенные шаги", rejectedX, rejectedH);
+            saveChart(chartStep, "./step_chart_" + methodName + "_" + rtol);
+
+
+            //График зависимости нормы точной полной погрешности от независимой переменной
+            XYChart chartFullError = QuickChart.getChart("Зависимость полной погрешности (" + methodName + "), rtol = " + rtol, "x", "Норма",
+                    "Норма", xValues, fullError);
+            saveChart(chartFullError, "./full_error_chart_" + methodName + "_" + rtol);
         }
-
-        chartStep.addSeries("Принятые шаги", acceptedX, acceptedH);
-        chartStep.addSeries("Отброшенные шаги", rejectedX, rejectedH);
-        saveChart(chartStep, "./step_chart_" + methodName + "_" + rtol);
-
-        // График нормы погрешности
-        XYChart chartNorm = QuickChart.getChart("Норма погрешности (" + methodName + "), rtol = " + rtol, "x", "Норма",
-                "Норма", xValues, norms);
-        saveChart(chartNorm, "./norm_chart_" + methodName + "_" + rtol);
-
-        //График зависимости нормы точной полной погрешности от независимой переменной
-        XYChart chartFullError = QuickChart.getChart("Зависимость полной погрешности (" + methodName + "), rtol = " + rtol, "x", "Норма",
-                "Норма", xValues, fullError);
-        saveChart(chartFullError, "./full_error_chart_" + methodName + "_" + rtol);
 
 
         return new AdaptiveResult(calcCount);
     }
 
-
-    private static double fullErrorrate(String methodName,double x, RealVector y, double h){
+    private static double fullErrorrate(String methodName, double x, RealVector y, double h) {
         double tol = 1e-5;
         int degree = methodName.equals("Рунге-Кутты") ? 2 : 3;
         double hOpt = 1.0;
         Result rkResult = null;
         Result rkResultHalf = null;
-
         double hLocal = h;
 
         if (methodName.equals("Рунге-Кутты")) {
-
             while (true) {
                 rkResult = rungeKutta(x, y, x + hLocal, hLocal);
-                rkResultHalf = rungeKutta(x, y, x + hLocal, hLocal/2);
-
-
+                rkResultHalf = rungeKutta(x, y, x + hLocal, hLocal / 2);
                 RealVector error = rkResult.y.subtract(rkResultHalf.y).mapDivide(1 - Math.pow(2, -degree));
                 double errorNorm = error.getNorm();
 
@@ -298,12 +293,10 @@ public class Lab8Optimized {
                     hLocal /= 2;
                 }
             }
-        }else {
-
+        } else {
             while (true) {
-                rkResult = simpson(x, y, x+ hLocal, hLocal);
-                rkResultHalf = simpson(x,y,x + hLocal,hLocal/2);
-
+                rkResult = simpson(x, y, x + hLocal, hLocal);
+                rkResultHalf = simpson(x, y, x + hLocal, hLocal / 2);
                 RealVector error = rkResult.y.subtract(rkResultHalf.y).mapDivide(1 - Math.pow(2, -degree));
                 double errorNorm = error.getNorm();
 
@@ -314,7 +307,6 @@ public class Lab8Optimized {
                 }
             }
         }
-
 
         RealVector error = rkResult.y.subtract(rkResultHalf.y).mapDivide(1 - Math.pow(2, -degree));
         return error.getNorm();
@@ -328,6 +320,58 @@ public class Lab8Optimized {
         } catch (Exception e) {
             System.err.println("Ошибка при сохранении графика: " + e.getMessage());
         }
+    }
+
+    private static void saveAdaptiveSolutionChart(String methodName, double rtol, List<Double> xValues, List<RealVector> yValues) {
+        XYChart chart = new XYChart(800, 600);
+        chart.setTitle("Решение с адаптивным шагом (" + methodName + "), rtol = " + rtol);
+        chart.setXAxisTitle("x");
+        chart.setYAxisTitle("y");
+
+        List<Double> y1Values = new ArrayList<>();
+        List<Double> y2Values = new ArrayList<>();
+        List<Double> y3Values = new ArrayList<>();
+        List<Double> y4Values = new ArrayList<>();
+
+        for (RealVector y : yValues) {
+            y1Values.add(y.getEntry(0));
+            y2Values.add(y.getEntry(1));
+            y3Values.add(y.getEntry(2));
+            y4Values.add(y.getEntry(3));
+        }
+
+        chart.addSeries("y1(x)", xValues, y1Values);
+        chart.addSeries("y2(x)", xValues, y2Values);
+        chart.addSeries("y3(x)", xValues, y3Values);
+        chart.addSeries("y4(x)", xValues, y4Values);
+        saveChart(chart, "./adaptive_solution_chart_" + methodName + "_" + rtol);
+    }
+
+    private static void visualizeRealSolution() {
+        List<Double> xValues = new ArrayList<>();
+        List<Double> y1Values = new ArrayList<>();
+        List<Double> y2Values = new ArrayList<>();
+        List<Double> y3Values = new ArrayList<>();
+        List<Double> y4Values = new ArrayList<>();
+
+        for (double x = x0; x <= x1; x += 0.01) {
+            RealVector y = realY(x);
+            xValues.add(x);
+            y1Values.add(y.getEntry(0));
+            y2Values.add(y.getEntry(1));
+            y3Values.add(y.getEntry(2));
+            y4Values.add(y.getEntry(3));
+        }
+
+        XYChart chart = new XYChart(800, 600);
+        chart.setTitle("Исходное решение");
+        chart.setXAxisTitle("x");
+        chart.setYAxisTitle("y");
+        chart.addSeries("y1(x)", xValues, y1Values);
+        chart.addSeries("y2(x)", xValues, y2Values);
+        chart.addSeries("y3(x)", xValues, y3Values);
+        chart.addSeries("y4(x)", xValues, y4Values);
+        saveChart(chart, "./real_solution_chart");
     }
 
     @FunctionalInterface
@@ -360,6 +404,9 @@ public class Lab8Optimized {
 
             // Вычисление и визуализация для оптимального шага
             visualizeOptimalStep();
+
+            // Визуализация исходного решения
+            visualizeRealSolution();
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -421,7 +468,7 @@ public class Lab8Optimized {
     private static void visualizeOptimalStep() {
         double tol = 1e-5;
         int degreeRk = 2;
-        int degreeSimpson = 2;
+        int degreeSimpson = 3;
         String cacheKeyRk = "hOptRk";
         String cacheKeySimpson = "hOptSimpson";
         ExecutorService executor = Executors.newFixedThreadPool(NUM_THREADS);
@@ -513,7 +560,7 @@ public class Lab8Optimized {
         chartNormsVsX.setYAxisTitle("Норма погрешности");
 
         chartNormsVsX.addSeries("Рунге-Кутты", nodesRk, normsRk);
-        chartNormsVsX.addSeries("Симпсона", nodesSimpson, normsSimpson);
+        chartNormsVsX.addSeries("Симпсон", nodesSimpson, normsSimpson);
         saveChart(chartNormsVsX, "./optimal_step_norm_vs_x_chart");
     }
 }
