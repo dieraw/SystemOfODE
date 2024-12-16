@@ -195,8 +195,10 @@ public class Lab8Optimized {
         List<String> stepTypes = new ArrayList<>();
         List<Double> fullError = new ArrayList<>();
         List<RealVector> yValues = new ArrayList<>(); // Добавлено для хранения значений y
+        int degree = methodName.equals("Рунге-Кутты") ? 2 : 3;
 
         while (x < x1) {
+            h = Math.min(h, x1 - x);
             Result result = method.apply(x, y, x + h, h);
             RealVector y1 = result.y;
             calcCount += result.calcCount;
@@ -205,9 +207,7 @@ public class Lab8Optimized {
             RealVector y2 = resultHalf.y;
             calcCount += resultHalf.calcCount;
 
-            double norm = methodName.equals("Рунге-Кутты")
-                    ? y1.subtract(y2).mapDivide(1 - Math.pow(2, -2)).getNorm()
-                    : y1.subtract(y2).mapDivide(1 - Math.pow(2, -3)).getNorm();
+            double norm = y1.subtract(y2).mapDivide(1 - Math.pow(2, -degree)).getNorm();
 
             xValues.add(x);
             hValues.add(h);
@@ -215,18 +215,23 @@ public class Lab8Optimized {
             fullError.add(fullErrorrate(methodName, x,y,h));
             yValues.add(y); // Сохраняем значение y
 
-            if (norm > rtol * Math.pow(2, 2)) {
+            if (norm > Math.pow(2, degree) * rtol) {
                 h /= 2;
                 stepTypes.add("Уменьшение");
-            } else if (norm < rtol / Math.pow(2, 3)) {
-                h = Math.min(2 * h, 0.5);
-                y = y1;
+            } else if (rtol < norm && norm <= Math.pow(2, degree) * rtol) {
                 x = x + h;
-                stepTypes.add("Увеличение");
-            } else {
-                y = y1;
+                y = y2;
+                h /= 2;
+                stepTypes.add("Принятие и уменьшение");
+            } else if (rtol / Math.pow(2, degree + 1) < norm && norm <= rtol) {
                 x = x + h;
+                y = y1;
                 stepTypes.add("Принятие");
+            } else {
+                x = x + h;
+                y = y1;
+                h = Math.min(2 * h, 0.5);
+                stepTypes.add("Принятие и увеличение");
             }
         }
 
@@ -248,7 +253,7 @@ public class Lab8Optimized {
             List<Double> rejectedH = new ArrayList<>();
 
             for (int i = 0; i < xValues.size(); i++) {
-                if (stepTypes.get(i).equals("Принятие") || stepTypes.get(i).equals("Увеличение")) {
+                if (stepTypes.get(i).equals("Принятие") || stepTypes.get(i).equals("Увеличение") || stepTypes.get(i).equals("Принятие и уменьшение")) {
                     acceptedX.add(xValues.get(i));
                     acceptedH.add(hValues.get(i));
                 } else {
@@ -258,11 +263,12 @@ public class Lab8Optimized {
             }
 
             chartStep.addSeries("Принятые шаги", acceptedX, acceptedH);
-            chartStep.addSeries("Отброшенные шаги", rejectedX, rejectedH);
+            chartStep.addSeries(".", rejectedX, rejectedH);
             saveChart(chartStep, "./step_chart_" + methodName + "_" + rtol);
 
 
             //График зависимости нормы точной полной погрешности от независимой переменной
+
             XYChart chartFullError = QuickChart.getChart("Зависимость полной погрешности (" + methodName + "), rtol = " + rtol, "x", "Норма",
                     "Норма", xValues, fullError);
             saveChart(chartFullError, "./full_error_chart_" + methodName + "_" + rtol);
